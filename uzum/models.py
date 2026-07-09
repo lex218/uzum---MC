@@ -139,6 +139,7 @@ class CatalogSku:
     barcode: str | None
     article: str | None
     quantity_active: int
+    purchase_price: int  # закупочная, сумы
 
     @classmethod
     def list_from_product(cls, p: dict[str, Any]) -> list["CatalogSku"]:
@@ -154,6 +155,7 @@ class CatalogSku:
                     barcode=str(barcode) if barcode else None,
                     article=s.get("article") or s.get("sellerItemCode"),
                     quantity_active=s.get("quantityActive") or 0,
+                    purchase_price=s.get("purchasePrice") or 0,
                 )
             )
         return out

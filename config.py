@@ -38,6 +38,7 @@ class Config:
     orders_initial_days: int = 1
     transfers_initial_days: int = 14
     return_window_days: int = 30
+    stock_autocorrect: bool = True
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     db_path: str = "sync.sqlite3"
@@ -68,6 +69,7 @@ class Config:
             orders_initial_days=_int("ORDERS_INITIAL_DAYS", 1),
             transfers_initial_days=_int("TRANSFERS_INITIAL_DAYS", 14),
             return_window_days=_int("RETURN_WINDOW_DAYS", 30),
+            stock_autocorrect=(os.getenv("STOCK_AUTOCORRECT") or "1") not in ("0", "false", "no"),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
             db_path=os.getenv("DB_PATH") or "sync.sqlite3",

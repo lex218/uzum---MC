@@ -28,7 +28,7 @@ from sync.matching import SkuResolver
 from sync.orders import sync_orders
 from sync.returns import sync_returns
 from sync.shipments import sync_shipments
-from sync.stock import check_stock
+from sync.stock import align_stock, check_stock
 from sync.transfers import sync_transfers
 from uzum.client import UzumClient
 
@@ -91,7 +91,7 @@ def cmd_run(ctx: SyncContext, dry_run: bool) -> None:
                 sync_transfers(ctx, dry_run)
                 next_transfers = now + ctx.cfg.transfers_interval
             if now >= next_stock:
-                check_stock(ctx)
+                check_stock(ctx, dry_run)
                 next_stock = now + ctx.cfg.stock_interval
         except KeyboardInterrupt:
             raise
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         "command",
         choices=[
             "init", "sync-orders", "sync-shipments", "sync-returns",
-            "sync-transfers", "check-stock", "sync-all", "run", "dry-run",
+            "sync-transfers", "check-stock", "align-stock", "sync-all", "run", "dry-run",
         ],
     )
     parser.add_argument("--dry-run", action="store_true", help="не создавать документы")
@@ -133,7 +133,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "sync-transfers":
             sync_transfers(ctx, dry_run)
         elif args.command == "check-stock":
-            check_stock(ctx)
+            check_stock(ctx, dry_run)
+        elif args.command == "align-stock":
+            align_stock(ctx, dry_run)
         elif args.command in ("sync-all", "dry-run"):
             run_cycle(ctx, dry_run)
         elif args.command == "run":

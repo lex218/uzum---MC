@@ -33,9 +33,9 @@ class StubEntities:
 
 CATALOG = [
     CatalogSku(sku_id=1, sku_title="PS-1", product_id=10, product_title="A",
-               barcode="1000001", article=None, quantity_active=5),
+               barcode="1000001", article=None, quantity_active=5, purchase_price=0),
     CatalogSku(sku_id=2, sku_title="ЖЕЛТ", product_id=11, product_title="B",
-               barcode="1000002", article=None, quantity_active=0),
+               barcode="1000002", article=None, quantity_active=0, purchase_price=0),
 ]
 
 
