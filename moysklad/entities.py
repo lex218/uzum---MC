@@ -168,10 +168,21 @@ class Entities:
                 if name in existing:
                     continue
                 log.info("Создаю статус заказа «%s»", name)
-                created = self._ms.post(
-                    "/entity/customerorder/metadata/states",
-                    {"name": name, "stateType": state_type, "color": color},
-                )
+                try:
+                    created = self._ms.post(
+                        "/entity/customerorder/metadata/states",
+                        {"name": name, "stateType": state_type, "color": color},
+                    )
+                except MoySkladError as exc:
+                    # финальный положительный/отрицательный статус может быть
+                    # только один (code 3007) — создаём как обычный
+                    if "3007" not in str(exc) or state_type == "Regular":
+                        raise
+                    log.warning("Статус «%s»: тип %s занят, создаю как Regular", name, state_type)
+                    created = self._ms.post(
+                        "/entity/customerorder/metadata/states",
+                        {"name": name, "stateType": "Regular", "color": color},
+                    )
                 existing[name] = created
             self._cache["states"] = existing
         return self._cache["states"]
