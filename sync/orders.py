@@ -24,15 +24,24 @@ from uzum.models import OrderItem
 log = logging.getLogger(__name__)
 
 KV_LAST_POLL = "orders_last_poll_s"
+KV_INITIAL_START = "orders_initial_start_s"
 
 
 def _poll_window(ctx: SyncContext, now_s: int) -> int:
-    """Нижняя граница окна опроса: перекрытие + самый старый открытый заказ."""
+    """Нижняя граница окна опроса: перекрытие + самый старый открытый заказ.
+
+    Ниже точки первого запуска (KV_INITIAL_START) окно не опускается,
+    чтобы перекрытие не затягивало историю; исключение — открытые
+    заказы, которые уже отслеживаются.
+    """
+    start = ctx.db.get_kv(KV_INITIAL_START)
+    if start is None:
+        start = str(now_s - ctx.cfg.orders_initial_days * 86400)
     last = ctx.db.get_kv(KV_LAST_POLL)
     if last is None:
-        date_from = now_s - ctx.cfg.orders_initial_days * 86400
+        date_from = int(start)
     else:
-        date_from = int(last) - ctx.cfg.orders_overlap_hours * 3600
+        date_from = max(int(last) - ctx.cfg.orders_overlap_hours * 3600, int(start))
     oldest_ms = ctx.db.oldest_open_order_ms()
     if oldest_ms is not None:
         date_from = min(date_from, oldest_ms // 1000 - 3600)
@@ -58,6 +67,8 @@ def sync_orders(ctx: SyncContext, dry_run: bool = False) -> None:
 
     if not dry_run:
         ctx.db.set_kv(KV_LAST_POLL, str(now_s))
+        if ctx.db.get_kv(KV_INITIAL_START) is None:
+            ctx.db.set_kv(KV_INITIAL_START, str(date_from))
 
 
 def _save_items(ctx: SyncContext, order_id: int, items: list[OrderItem], resolved: dict[int, dict]) -> None:
