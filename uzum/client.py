@@ -93,16 +93,17 @@ class UzumClient:
             page += 1
 
     # --- поставки ---
-    def invoices(self, shop_id: int) -> list[Invoice]:
-        out: list[Invoice] = []
+    def invoices(self, shop_id: int) -> Iterator[Invoice]:
+        """Накладные от новых к старым (ленивая пагинация)."""
         page = 0
         while True:
             data = self._get(
                 f"/v1/shop/{shop_id}/invoice", {"page": page, "size": PAGE_SIZE}
             )
-            out.extend(Invoice.from_api(d) for d in data or [])
+            for d in data or []:
+                yield Invoice.from_api(d)
             if not data or len(data) < PAGE_SIZE:
-                return out
+                return
             page += 1
 
     def invoice_skus(self, shop_id: int, invoice_id: int) -> list[InvoiceSku]:

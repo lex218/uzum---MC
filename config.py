@@ -36,6 +36,7 @@ class Config:
     stock_interval: int = 3600
     orders_overlap_hours: int = 48
     orders_initial_days: int = 1
+    transfers_initial_days: int = 14
     return_window_days: int = 30
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
@@ -65,6 +66,7 @@ class Config:
             stock_interval=_int("STOCK_INTERVAL", 3600),
             orders_overlap_hours=_int("ORDERS_OVERLAP_HOURS", 48),
             orders_initial_days=_int("ORDERS_INITIAL_DAYS", 1),
+            transfers_initial_days=_int("TRANSFERS_INITIAL_DAYS", 14),
             return_window_days=_int("RETURN_WINDOW_DAYS", 30),
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, timedelta
 
 from moysklad.entities import meta_ref
 from sync.context import SyncContext
@@ -18,12 +19,24 @@ log = logging.getLogger(__name__)
 
 
 def sync_transfers(ctx: SyncContext, dry_run: bool = False) -> None:
+    cutoff = date.today() - timedelta(days=ctx.cfg.transfers_initial_days)
+    # накладные, ждущие завершения приёмки, — их ищем и глубже отсечки
+    pending = ctx.db.pending_invoice_ids()
     for invoice in ctx.uzum.invoices(ctx.shop_id):
+        tracked = ctx.db.get_invoice(invoice.id) is not None
+        is_old = invoice.date_created is not None and invoice.date_created < cutoff
+        if is_old and not tracked:
+            # список идёт от новых к старым: дальше только история
+            if not pending:
+                log.info("Дошли до накладных старше %s — дальше история", cutoff.isoformat())
+                break
+            continue
         try:
             _process_invoice(ctx, invoice, dry_run)
         except Exception:
             log.exception("Ошибка обработки поставки %s", invoice.number)
             ctx.notifier.send(f"⚠️ Uzum-sync: ошибка обработки поставки №{invoice.number}")
+        pending.discard(invoice.id)
 
 
 def _process_invoice(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:

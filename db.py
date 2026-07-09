@@ -229,6 +229,12 @@ class Db:
         )
         self._conn.commit()
 
+    def pending_invoice_ids(self) -> set[int]:
+        rows = self._conn.execute(
+            "SELECT uzum_invoice_id FROM invoices WHERE reconciled=0"
+        ).fetchall()
+        return {r["uzum_invoice_id"] for r in rows}
+
     def mark_invoice_reconciled(
         self, uzum_invoice_id: int, accepted: dict[str, int], ms_loss_id: str | None
     ) -> None:

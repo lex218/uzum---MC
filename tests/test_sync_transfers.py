@@ -1,11 +1,14 @@
 """Поставки: перемещение при создании, списание при недостаче приёмки."""
+from datetime import date, timedelta
+
 from sync.transfers import sync_transfers
 from tests.conftest import FakeResolver
 from uzum.models import Invoice, InvoiceSku
 
 
-def _invoice(status="CREATED", date_accepted=None):
+def _invoice(status="CREATED", date_accepted=None, date_created=None):
     return Invoice(id=3705936, number="1100037059367", status=status,
+                   date_created=date_created or date.today(),
                    date_accepted=date_accepted, total_to_stock=36, total_accepted=None)
 
 
@@ -37,6 +40,14 @@ def test_move_created_for_new_invoice(ctx):
 
     sync_transfers(ctx)  # идемпотентность
     assert len(move_posts(ctx)) == 1
+
+
+def test_historical_invoice_skipped(ctx):
+    old = _invoice(date_created=date.today() - timedelta(days=30))
+    _setup(ctx, old, [InvoiceSku(332117, "PS-9908-1500МЛ", "Чайник", 36, 0)])
+    sync_transfers(ctx)
+    assert move_posts(ctx) == []
+    assert ctx.db.get_invoice(3705936) is None
 
 
 def test_missing_sku_blocks_move_and_notifies(ctx):

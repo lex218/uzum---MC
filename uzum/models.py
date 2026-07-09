@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
 
 # Статусы позиций заказа в /v1/finance/orders
@@ -71,16 +72,25 @@ class Invoice:
     id: int
     number: str
     status: str  # invoiceStatus.value: CREATED / ... / ACCEPTED
+    date_created: date | None  # dateCreated приходит строкой "дд.мм.гггг"
     date_accepted: str | None
     total_to_stock: int | None
     total_accepted: int | None
 
     @classmethod
     def from_api(cls, d: dict[str, Any]) -> "Invoice":
+        created = None
+        raw = d.get("dateCreated")
+        if raw:
+            try:
+                created = datetime.strptime(raw, "%d.%m.%Y").date()
+            except ValueError:
+                pass
         return cls(
             id=d["id"],
             number=str(d.get("invoiceNumber") or d["id"]),
             status=((d.get("invoiceStatus") or {}).get("value") or d.get("status") or ""),
+            date_created=created,
             date_accepted=d.get("dateAccepted"),
             total_to_stock=d.get("totalToStock"),
             total_accepted=d.get("totalAccepted"),
