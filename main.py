@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import logging
 import sys
 import time
@@ -71,33 +72,49 @@ def run_cycle(ctx: SyncContext, dry_run: bool) -> None:
     sync_transfers(ctx, dry_run)
 
 
+def _lock_single_instance(db_path: str):
+    """Блокировка от параллельного запуска (cron + ручной = дубли документов)."""
+    fh = open(db_path + ".lock", "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(
+            "Другой экземпляр синхронизации уже работает с этой БД — выходим."
+        )
+    return fh  # держим открытым до конца процесса
+
+
 def cmd_run(ctx: SyncContext, dry_run: bool) -> None:
-    next_orders = 0.0
-    next_transfers = 0.0
-    next_stock = 0.0
+    def orders_block() -> None:
+        sync_orders(ctx, dry_run)
+        sync_shipments(ctx, dry_run)
+        sync_returns(ctx, dry_run)
+
+    # каждый блок с собственным таймером: падение одного не душит остальные
+    jobs = [
+        ["заказы", orders_block, ctx.cfg.orders_interval, 0.0],
+        ["поставки", lambda: sync_transfers(ctx, dry_run), ctx.cfg.transfers_interval, 0.0],
+        ["остатки", lambda: check_stock(ctx, dry_run), ctx.cfg.stock_interval, 0.0],
+    ]
     log.info(
         "Цикл запущен: заказы каждые %dс, поставки %dс, остатки %dс",
         ctx.cfg.orders_interval, ctx.cfg.transfers_interval, ctx.cfg.stock_interval,
     )
     while True:
         now = time.time()
-        try:
-            if now >= next_orders:
-                sync_orders(ctx, dry_run)
-                sync_shipments(ctx, dry_run)
-                sync_returns(ctx, dry_run)
-                next_orders = now + ctx.cfg.orders_interval
-            if now >= next_transfers:
-                sync_transfers(ctx, dry_run)
-                next_transfers = now + ctx.cfg.transfers_interval
-            if now >= next_stock:
-                check_stock(ctx, dry_run)
-                next_stock = now + ctx.cfg.stock_interval
-        except KeyboardInterrupt:
-            raise
-        except Exception:
-            log.exception("Ошибка цикла синхронизации")
-            ctx.notifier.send("🔥 Uzum-sync: ошибка цикла синхронизации, см. лог")
+        for job in jobs:
+            name, fn, interval, next_at = job
+            if now < next_at:
+                continue
+            try:
+                fn()
+            except KeyboardInterrupt:
+                raise
+            except Exception:
+                log.exception("Ошибка блока «%s»", name)
+                ctx.notifier.send(f"🔥 Uzum-sync: ошибка блока «{name}», см. лог")
+            finally:
+                job[3] = time.time() + interval  # интервал идёт и после ошибки
         time.sleep(5)
 
 
@@ -120,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     ctx = build_context()
+    _lock = _lock_single_instance(ctx.cfg.db_path)  # noqa: F841 — держит flock
     dry_run = args.dry_run or args.command == "dry-run"
     try:
         if args.command == "init":

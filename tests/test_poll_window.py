@@ -24,3 +24,13 @@ def test_open_order_extends_window(ctx):
     old_open_ms = (NOW - 10 * DAY) * 1000
     ctx.db.upsert_order(1, "created", ms_order_id="x", first_seen_ms=old_open_ms)
     assert _poll_window(ctx, NOW + 60) == old_open_ms // 1000 - 3600
+
+
+def test_order_older_than_return_window_stops_extending(ctx):
+    """Отгруженный заказ старше окна возвратов считается закрытым."""
+    start = NOW - 1 * DAY
+    ctx.db.set_kv(KV_INITIAL_START, str(start))
+    ctx.db.set_kv(KV_LAST_POLL, str(NOW))
+    ancient_ms = (NOW - 100 * DAY) * 1000  # старше return_window_days=30
+    ctx.db.upsert_order(1, "shipped", ms_order_id="x", first_seen_ms=ancient_ms)
+    assert _poll_window(ctx, NOW + 60) == start

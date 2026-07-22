@@ -72,7 +72,12 @@ def _return_order_delta(
         for i, delta in deltas
     ]
     causes = {i["return_cause"] for i, _ in deltas if i["return_cause"]}
+    # детерминированный ключ идемпотентности: суммарный возврат после этого
+    # документа; при падении между POST и записью в БД повтор найдёт документ
+    total_after = sum((i["amount_returns"] or 0) for i in items)
+    external_code = f"ret-{order_id}-{total_after}"
     payload = {
+        "externalCode": external_code,
         "organization": meta_ref(ctx.entities.organization()),
         "agent": meta_ref(ctx.entities.agent()),
         "store": meta_ref(ctx.entities.store_uzum()),
@@ -87,7 +92,9 @@ def _return_order_delta(
         + (f". Причина: {'; '.join(sorted(causes))}" if causes else ""),
         "positions": positions,
     }
-    ctx.ms.post("/entity/salesreturn", payload)
+    existing = ctx.ms.find_one("/entity/salesreturn", f"externalCode={external_code}")
+    if existing is None:
+        ctx.ms.post("/entity/salesreturn", payload)
     for i, delta in deltas:
         ctx.db.set_item_returns(i["uzum_item_id"], (i["returns_synced"] or 0) + delta)
     ctx.ms.put(

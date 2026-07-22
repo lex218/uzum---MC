@@ -18,6 +18,16 @@ log = logging.getLogger(__name__)
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 MAX_ATTEMPTS = 5
 PAGE_LIMIT = 100
+MAX_RETRY_DELAY = 120.0
+
+# методы, которые безопасно повторять: POST повторяем только на 429 —
+# при 5xx/сетевой ошибке сервер мог уже применить запись (дубль документа)
+IDEMPOTENT_METHODS = {"GET", "PUT", "DELETE"}
+
+
+def escape_filter(value: object) -> str:
+    """Экранирование значения для строки filter (спецсимволы ; и =)."""
+    return str(value).replace("\\", "\\\\").replace(";", "\\;").replace("=", "\\=")
 
 
 class MoySkladError(Exception):
@@ -53,13 +63,21 @@ class MoySkladClient:
             try:
                 resp = self._client.request(method, path, params=params, json=json)
             except httpx.HTTPError as exc:
-                if attempt == MAX_ATTEMPTS - 1:
-                    raise MoySkladError(f"МойСклад {method} {path}: сетевая ошибка: {exc}") from exc
-                time.sleep(2**attempt)
-                continue
-            if resp.status_code in RETRY_STATUSES and attempt < MAX_ATTEMPTS - 1:
+                if method in IDEMPOTENT_METHODS and attempt < MAX_ATTEMPTS - 1:
+                    time.sleep(2**attempt)
+                    continue
+                raise MoySkladError(f"МойСклад {method} {path}: сетевая ошибка: {exc}") from exc
+            retryable = resp.status_code == 429 or (
+                resp.status_code in RETRY_STATUSES and method in IDEMPOTENT_METHODS
+            )
+            if retryable and attempt < MAX_ATTEMPTS - 1:
+                delay = float(2**attempt)
                 retry_ms = resp.headers.get("X-Lognex-Retry-After")
-                delay = int(retry_ms) / 1000 if retry_ms else float(2**attempt)
+                if retry_ms:
+                    try:
+                        delay = min(float(retry_ms) / 1000, MAX_RETRY_DELAY)
+                    except ValueError:
+                        pass
                 log.warning(
                     "МойСклад %s %s: HTTP %s, повтор через %.1fс",
                     method, path, resp.status_code, delay,

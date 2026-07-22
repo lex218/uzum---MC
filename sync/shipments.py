@@ -33,7 +33,9 @@ def _ship_order(ctx: SyncContext, rec: dict, dry_run: bool) -> None:
         return
     issued = [
         i for i in items
-        if i["status"] == STATUS_TO_WITHDRAW or i["date_issued_ms"] is not None
+        if i["status"] == STATUS_TO_WITHDRAW
+        or i["date_issued_ms"] is not None
+        or (i["amount_returns"] or 0) > 0  # возврат возможен только после выкупа
     ]
     if len(issued) < len(items):
         return  # ждём выкупа всех активных позиций

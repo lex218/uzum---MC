@@ -130,10 +130,17 @@ class Db:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    def oldest_open_order_ms(self) -> int | None:
-        """Дата самого старого незакрытого заказа — нижняя граница окна опроса."""
+    def oldest_open_order_ms(self, min_ms: int = 0) -> int | None:
+        """Дата самого старого незакрытого заказа не старше min_ms.
+
+        Заказы старше окна возвратов (min_ms) считаются закрытыми и не
+        расширяют окно опроса — иначе оно навсегда прибивается к первой
+        отгрузке и каждый цикл выкачивает всю историю.
+        """
         row = self._conn.execute(
-            "SELECT MIN(first_seen_ms) m FROM orders WHERE status IN ('created','shipped','returned')"
+            "SELECT MIN(first_seen_ms) m FROM orders "
+            "WHERE status IN ('created','shipped','returned','blocked') AND first_seen_ms >= ?",
+            (min_ms,),
         ).fetchone()
         return row["m"] if row and row["m"] is not None else None
 

@@ -16,6 +16,7 @@ Uzum периодически теряет и находит товары на �
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ log = logging.getLogger(__name__)
 
 KV_PREV_DIFFS = "stock_prev_diffs"
 MAX_LINES = 30
+MAX_POSITIONS = 900  # лимит МойСклад — 1000 элементов массива на запрос
 
 
 @dataclass
@@ -95,12 +97,33 @@ def _position(d: StockDiff, qty: int, with_price: bool) -> dict:
     return pos
 
 
+def _diff_key(diffs: list[StockDiff]) -> str:
+    """Детерминированный ключ набора расхождений (идемпотентность коррекций)."""
+    raw = "|".join(f"{d.assortment_id}:{d.delta}" for d in sorted(diffs, key=lambda d: d.assortment_id))
+    return hashlib.sha1(raw.encode()).hexdigest()[:12]
+
+
+def _post_chunked(ctx: SyncContext, entity: str, base_code: str, payload_base: dict,
+                  positions: list[dict]) -> None:
+    """POST документа частями по MAX_POSITIONS с externalCode-защитой от дублей."""
+    for n, start in enumerate(range(0, len(positions), MAX_POSITIONS)):
+        code = f"{base_code}-{n}"
+        if ctx.ms.find_one(f"/entity/{entity}", f"externalCode={code}"):
+            continue  # уже создан прошлой (упавшей) попыткой
+        ctx.ms.post(
+            f"/entity/{entity}",
+            {**payload_base, "externalCode": code,
+             "positions": positions[start:start + MAX_POSITIONS]},
+        )
+
+
 def _correct(ctx: SyncContext, diffs: list[StockDiff], reason: str) -> None:
     """Создать оприходование (нашлись) и/или списание (потерялись)."""
     found = [d for d in diffs if d.delta > 0]
     lost = [d for d in diffs if d.delta < 0]
     store = meta_ref(ctx.entities.store_uzum())
     org = meta_ref(ctx.entities.organization())
+    key = _diff_key(diffs)
 
     def _lines(items: list[StockDiff]) -> str:
         return "; ".join(
@@ -108,27 +131,27 @@ def _correct(ctx: SyncContext, diffs: list[StockDiff], reason: str) -> None:
         )
 
     if found:
-        ctx.ms.post(
-            "/entity/enter",
+        _post_chunked(
+            ctx, "enter", f"stockfix-{key}-in",
             {
                 "organization": org,
                 "store": store,
-                "description": f"Корректировка остатков по данным Uzum ({reason}): "
-                               f"товар найден/довезён. {_lines(found)}",
-                "positions": [_position(d, d.delta, with_price=True) for d in found],
+                "description": (f"Корректировка остатков по данным Uzum ({reason}): "
+                                f"товар найден/довезён. {_lines(found)}")[:4000],
             },
+            [_position(d, d.delta, with_price=True) for d in found],
         )
         log.info("Оприходование: %d позиций (+%d шт)", len(found), sum(d.delta for d in found))
     if lost:
-        ctx.ms.post(
-            "/entity/loss",
+        _post_chunked(
+            ctx, "loss", f"stockfix-{key}-out",
             {
                 "organization": org,
                 "store": store,
-                "description": f"Корректировка остатков по данным Uzum ({reason}): "
-                               f"недостача на складе. {_lines(lost)}",
-                "positions": [_position(d, -d.delta, with_price=False) for d in lost],
+                "description": (f"Корректировка остатков по данным Uzum ({reason}): "
+                                f"недостача на складе. {_lines(lost)}")[:4000],
             },
+            [_position(d, -d.delta, with_price=False) for d in lost],
         )
         log.info("Списание: %d позиций (-%d шт)", len(lost), -sum(d.delta for d in lost))
 

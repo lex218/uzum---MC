@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import Config
-from moysklad.client import MoySkladClient, MoySkladError
+from moysklad.client import MoySkladClient, MoySkladError, escape_filter
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ class Entities:
         if "org" not in self._cache:
             if self._cfg.organization_name:
                 row = self._ms.find_one(
-                    "/entity/organization", f"name={self._cfg.organization_name}"
+                    "/entity/organization", f"name={escape_filter(self._cfg.organization_name)}"
                 )
                 if row is None:
                     raise MoySkladError(
@@ -74,7 +74,7 @@ class Entities:
         """Единый контрагент-покупатель для заказов Uzum; создаётся при отсутствии."""
         if "agent" not in self._cache:
             name = self._cfg.agent_name
-            row = self._ms.find_one("/entity/counterparty", f"name={name}")
+            row = self._ms.find_one("/entity/counterparty", f"name={escape_filter(name)}")
             if row is None:
                 log.info("Создаю контрагента «%s»", name)
                 row = self._ms.post(
@@ -199,14 +199,14 @@ class Entities:
         Возвращает {href, type, name, matched_by} либо None.
         """
         if barcode:
-            row = self._ms.find_one("/entity/assortment", f"barcode={barcode}")
+            row = self._ms.find_one("/entity/assortment", f"barcode={escape_filter(barcode)}")
             if row:
                 return self._found(row, "barcode")
         if sku_title:
-            row = self._ms.find_one("/entity/product", f"article={sku_title}")
+            row = self._ms.find_one("/entity/product", f"article={escape_filter(sku_title)}")
             if row:
                 return self._found(row, "article")
-            row = self._ms.find_one("/entity/variant", f"code={sku_title}")
+            row = self._ms.find_one("/entity/variant", f"code={escape_filter(sku_title)}")
             if row:
                 return self._found(row, "variant_code")
         return None

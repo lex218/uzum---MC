@@ -37,6 +37,8 @@ def sync_transfers(ctx: SyncContext, dry_run: bool = False) -> None:
             log.exception("Ошибка обработки поставки %s", invoice.number)
             ctx.notifier.send(f"⚠️ Uzum-sync: ошибка обработки поставки №{invoice.number}")
         pending.discard(invoice.id)
+    if pending:
+        log.warning("Накладные из БД не найдены в выдаче Uzum: %s", sorted(pending))
 
 
 def _process_invoice(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:
@@ -45,8 +47,20 @@ def _process_invoice(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:
         if invoice.status in ("CANCELLED", "CANCELED"):
             return
         _create_move(ctx, invoice, dry_run)
-    elif not rec["reconciled"] and invoice.acceptance_finished:
-        _reconcile(ctx, rec, invoice, dry_run)
+    elif not rec["reconciled"]:
+        if invoice.status in ("CANCELLED", "CANCELED"):
+            # накладная отменена уже после создания перемещения:
+            # закрываем запись, товародвижение исправляется руками
+            if not dry_run:
+                ctx.db.mark_invoice_reconciled(invoice.id, {}, None)
+            ctx.notifier.send(
+                f"⚠️ Uzum-sync: поставка №{invoice.number} отменена в Uzum после "
+                f"создания перемещения — удалите/сторнируйте перемещение "
+                f"UZ-INV-{invoice.number} в МойСклад вручную."
+            )
+            return
+        if invoice.acceptance_finished:
+            _reconcile(ctx, rec, invoice, dry_run)
 
 
 def _positions_for(ctx: SyncContext, skus: list[InvoiceSku], invoice: Invoice, qty_key: str) -> list[dict] | None:
@@ -115,10 +129,20 @@ def _reconcile(ctx: SyncContext, rec: dict, invoice: Invoice, dry_run: bool) -> 
     accepted = {str(s.sku_id): s.accepted for s in skus}
 
     shortages = []
+    surpluses = []
     for sku in skus:
         sent_qty = sent.get(str(sku.sku_id), sku.to_stock)
         if sku.accepted < sent_qty:
             shortages.append((sku, sent_qty, sku.accepted))
+        elif sku.accepted > sent_qty:
+            surpluses.append((sku, sent_qty, sku.accepted))
+    if surpluses:
+        ctx.notifier.send(
+            f"⚠️ Uzum-sync: поставка №{invoice.number} — принято больше, чем в "
+            f"перемещении: "
+            + "; ".join(f"«{s.sku_title}»: {a} вместо {q}" for s, q, a in surpluses)
+            + ". Скорректируйте перемещение вручную."
+        )
 
     if not shortages:
         if not dry_run:
@@ -171,7 +195,7 @@ def _reconcile(ctx: SyncContext, rec: dict, invoice: Invoice, dry_run: bool) -> 
                 f"Расхождение приёмки поставки №{invoice.number}: "
                 f"отправлено {total_sent}, принято {total_acc}. "
                 + "; ".join(lines)
-            ),
+            )[:4000],
             "positions": positions,
         }
         existing = ctx.ms.find_one("/entity/loss", f"externalCode=loss-{invoice.id}")

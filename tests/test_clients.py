@@ -66,6 +66,35 @@ def test_ms_gzip_header_and_error(monkeypatch):
 
 
 @respx.mock
+def test_ms_post_not_retried_on_5xx(monkeypatch):
+    """POST после 5xx не повторяется: сервер мог уже создать документ."""
+    monkeypatch.setattr("moysklad.client.time.sleep", lambda s: None)
+    route = respx.post(f"{MS}/entity/customerorder").mock(
+        return_value=httpx.Response(502, text="bad gateway")
+    )
+    with pytest.raises(MoySkladError):
+        MoySkladClient("t").post("/entity/customerorder", {"name": "x"})
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_ms_post_retried_on_429(monkeypatch):
+    monkeypatch.setattr("moysklad.client.time.sleep", lambda s: None)
+    route = respx.post(f"{MS}/entity/customerorder")
+    route.side_effect = [
+        httpx.Response(429, headers={"X-Lognex-Retry-After": "100"}),
+        httpx.Response(200, json={"id": "1", "meta": {"href": "h", "type": "customerorder"}}),
+    ]
+    assert MoySkladClient("t").post("/entity/customerorder", {})["id"] == "1"
+    assert route.call_count == 2
+
+
+def test_filter_escaping():
+    from moysklad.client import escape_filter
+    assert escape_filter("Красный; L=42") == "Красный\\; L\\=42"
+
+
+@respx.mock
 def test_ms_retry_uses_lognex_header(monkeypatch):
     sleeps: list[float] = []
     monkeypatch.setattr("moysklad.client.time.sleep", sleeps.append)

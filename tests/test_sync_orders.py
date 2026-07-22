@@ -38,12 +38,53 @@ def test_idempotent_second_run(ctx):
     assert len(order_posts(ctx)) == 1
 
 
-def test_missing_sku_skips_order_and_notifies(ctx):
+def test_missing_sku_blocks_order_and_retries(ctx):
     _setup(ctx, [make_item(id=1, orderId=100, skuTitle="НЕИЗВЕСТНЫЙ")], known={})
     sync_orders(ctx)
     assert order_posts(ctx) == []
-    assert ctx.db.get_order(100) is None  # повторим попытку следующим циклом
+    assert ctx.db.get_order(100)["status"] == "blocked"  # держит окно опроса
     assert any("НЕИЗВЕСТНЫЙ" in m for m in ctx.notifier.messages)
+
+    # карточку завели — следующий цикл создаёт заказ
+    ctx.resolver = FakeResolver({"НЕИЗВЕСТНЫЙ": "https://ms/p9"})
+    sync_orders(ctx)
+    assert len(order_posts(ctx)) == 1
+    assert ctx.db.get_order(100)["status"] == "created"
+
+
+def test_new_item_added_to_existing_order(ctx):
+    _setup(ctx, [make_item(id=1, orderId=100)])
+    sync_orders(ctx)
+    rec = ctx.db.get_order(100)
+    ctx.resolver = FakeResolver({"PS-1": "https://ms/p1", "PS-2": "https://ms/p2"})
+    ctx.uzum.order_items = [
+        make_item(id=1, orderId=100),
+        make_item(id=2, orderId=100, skuTitle="PS-2"),
+    ]
+    sync_orders(ctx)
+    pos_posts = [
+        p for p in ctx.ms.posts
+        if p[0] == f"/entity/customerorder/{rec['ms_order_id']}/positions"
+    ]
+    assert len(pos_posts) == 1
+    assert ctx.db.get_item(2)["qty_synced"] == 2
+
+
+def test_quantity_increase_applied(ctx):
+    _setup(ctx, [make_item(id=1, orderId=100, amount=3, cancelled=2,
+                           status="PARTIALLY_CANCELLED")])
+    sync_orders(ctx)
+    rec = ctx.db.get_order(100)
+    ctx.ms.rows_map[f"/entity/customerorder/{rec['ms_order_id']}/positions"] = [
+        {"id": "pos1", "assortment": {"meta": {"href": "https://ms/p1", "type": "product"}}},
+    ]
+    # отмену откатили: cancelled 2 -> 0
+    ctx.uzum.order_items = [make_item(id=1, orderId=100, amount=3)]
+    sync_orders(ctx)
+    puts = [b for p, b in ctx.ms.puts
+            if p == f"/entity/customerorder/{rec['ms_order_id']}/positions/pos1"]
+    assert puts and puts[0]["quantity"] == 3
+    assert ctx.db.get_item(1)["qty_synced"] == 3
 
 
 def test_dry_run_creates_nothing(ctx):

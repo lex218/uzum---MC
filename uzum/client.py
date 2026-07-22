@@ -50,7 +50,13 @@ class UzumClient:
                 time.sleep(2**attempt)
                 continue
             if resp.status_code in RETRY_STATUSES and attempt < MAX_ATTEMPTS - 1:
-                delay = float(resp.headers.get("Retry-After") or 2**attempt)
+                delay = float(2**attempt)
+                raw = resp.headers.get("Retry-After")
+                if raw:
+                    try:
+                        delay = min(float(raw), 120.0)
+                    except ValueError:
+                        pass
                 log.warning("Uzum %s: HTTP %s, повтор через %.1fс", path, resp.status_code, delay)
                 time.sleep(delay)
                 continue
