@@ -97,6 +97,14 @@ def test_align_stock_corrects_immediately(ctx):
     assert len(ent) == 1 and ent[0][1]["positions"][0]["quantity"] == 10
 
 
+def test_in_transit_invoice_excluded_from_diff(ctx):
+    # накладная отправлена (5 шт PS-1, sku_id=1), приёмка не завершена:
+    # в МС остаток уже есть, в Uzum ещё нет — расхождения быть не должно
+    _setup(ctx, {"PS-1": 0}, {"PS-1": 5})
+    ctx.db.add_invoice(1, "INV1", "m1", "https://ms/move/m1", {"1": 5})
+    assert check_stock(ctx) == []
+
+
 def test_align_stock_dry_run(ctx):
     _setup(ctx, {"PS-1": 10}, {})
     diffs = align_stock(ctx, dry_run=True)

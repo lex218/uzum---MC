@@ -235,6 +235,17 @@ class Db:
         ).fetchall()
         return {r["uzum_invoice_id"] for r in rows}
 
+    def pending_invoice_sent(self) -> dict[str, int]:
+        """Суммарное отправленное количество по SKU в непринятых накладных."""
+        out: dict[str, int] = {}
+        rows = self._conn.execute(
+            "SELECT sent_json FROM invoices WHERE reconciled=0"
+        ).fetchall()
+        for r in rows:
+            for sku_id, qty in json.loads(r["sent_json"] or "{}").items():
+                out[sku_id] = out.get(sku_id, 0) + int(qty)
+        return out
+
     def mark_invoice_reconciled(
         self, uzum_invoice_id: int, accepted: dict[str, int], ms_loss_id: str | None
     ) -> None:

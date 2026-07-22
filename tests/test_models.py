@@ -18,6 +18,13 @@ def test_order_item_effective_qty():
     assert make_item(status="CANCELED").effective_qty == 0
 
 
+def test_returned_after_buyout_is_not_cancellation():
+    # возврат после выкупа: CANCELED + amountReturns>0 — позиция остаётся
+    item = make_item(status="CANCELED", amountReturns=1)
+    assert item.effective_qty == 2
+    assert item.issued
+
+
 def test_order_item_issued():
     assert not make_item().issued
     assert make_item(status="TO_WITHDRAW").issued

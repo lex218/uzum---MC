@@ -32,6 +32,21 @@ def _return_order_delta(
         (i, (i["amount_returns"] or 0) - (i["returns_synced"] or 0)) for i in items
     ]
     deltas = [(i, d) for i, d in deltas if d > 0]
+
+    # позиция, не попавшая в отгрузку, со склада не уходила — возврат в МС
+    # не нужен, просто закрываем дельту, чтобы она не висела вечно
+    shippable = []
+    for i, d in deltas:
+        if not i["ms_assortment_href"] or (i["qty_synced"] or 0) <= 0:
+            log.info(
+                "Возврат UZ-%s: позиция «%s» не была отгружена — закрыт без документа",
+                order_id, i["sku_title"],
+            )
+            if not dry_run:
+                ctx.db.set_item_returns(i["uzum_item_id"], i["amount_returns"] or 0)
+            continue
+        shippable.append((i, d))
+    deltas = shippable
     if not deltas:
         return
     if rec["ms_demand_href"] is None:

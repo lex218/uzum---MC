@@ -55,6 +55,10 @@ def _collect_diffs(ctx: SyncContext) -> list[StockDiff]:
         r["assortmentId"]: r["freeStock"] for r in rows if r.get("storeId") == store_id
     }
 
+    # товар «в пути»: перемещение уже создано, но приёмка на складе Uzum не
+    # завершена — в МС остаток уже есть, в Uzum ещё нет; исключаем из сверки
+    in_transit = ctx.db.pending_invoice_sent()
+
     # агрегируем по карточке МС: несколько SKU Uzum могут вести на одну позицию
     agg: dict[str, StockDiff] = {}
     for sku in ctx.resolver.catalog_skus():
@@ -62,8 +66,9 @@ def _collect_diffs(ctx: SyncContext) -> list[StockDiff]:
         if found is None:
             continue  # о несматченных SKU сообщают модули документов
         aid = found["href"].rstrip("/").rsplit("/", 1)[-1]
+        transit_qty = in_transit.get(str(sku.sku_id), 0)
         if aid in agg:
-            agg[aid].uzum_qty += sku.quantity_active
+            agg[aid].uzum_qty += sku.quantity_active + transit_qty
             agg[aid].title += f", {sku.sku_title}"
         else:
             agg[aid] = StockDiff(
@@ -71,7 +76,7 @@ def _collect_diffs(ctx: SyncContext) -> list[StockDiff]:
                 href=found["href"],
                 type=found["type"],
                 title=sku.sku_title,
-                uzum_qty=sku.quantity_active,
+                uzum_qty=sku.quantity_active + transit_qty,
                 ms_qty=int(ms_stock.get(aid, 0)),
                 purchase_price=sku.purchase_price,
             )

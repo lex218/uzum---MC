@@ -54,15 +54,24 @@ class OrderItem:
 
     @property
     def effective_qty(self) -> int:
-        """Количество к продаже с учётом отмен."""
-        if self.status == STATUS_CANCELED:
+        """Количество к продаже с учётом отмен.
+
+        Возврат после выкупа Uzum помечает как CANCELED с amountReturns > 0 —
+        это НЕ отмена: товар был продан и вернулся, позиция остаётся в заказе
+        (отгрузка + возврат покупателя), иначе позицию считаем отменённой.
+        """
+        if self.status == STATUS_CANCELED and self.amount_returns == 0:
             return 0
         return max(self.amount - self.cancelled, 0)
 
     @property
     def issued(self) -> bool:
         """Выкуплен (выдан покупателю)."""
-        return self.status == STATUS_TO_WITHDRAW or self.date_issued_ms is not None
+        return (
+            self.status == STATUS_TO_WITHDRAW
+            or self.date_issued_ms is not None
+            or self.amount_returns > 0
+        )
 
 
 @dataclass(frozen=True)
