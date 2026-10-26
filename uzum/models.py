@@ -149,6 +149,9 @@ class CatalogSku:
     article: str | None
     quantity_active: int
     purchase_price: int  # закупочная, сумы
+    # полный артикул (skuFullTitle, напр. «CFSHOP-FRIKFORMA-БЕЛЫЙ»): именно он
+    # приходит в заказах и накладных, а skuTitle — лишь вариант («БЕЛЫЙ»)
+    full_title: str = ""
 
     @classmethod
     def list_from_product(cls, p: dict[str, Any]) -> list["CatalogSku"]:
@@ -165,6 +168,7 @@ class CatalogSku:
                     article=s.get("article") or s.get("sellerItemCode"),
                     quantity_active=s.get("quantityActive") or 0,
                     purchase_price=s.get("purchasePrice") or 0,
+                    full_title=s.get("skuFullTitle") or "",
                 )
             )
         return out

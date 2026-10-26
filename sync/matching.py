@@ -30,6 +30,7 @@ class SkuResolver:
         self._shop_id = shop_id
         self._by_sku_id: dict[int, CatalogSku] | None = None
         self._by_product_title: dict[tuple[int, str], CatalogSku] = {}
+        self._by_full_title: dict[str, CatalogSku] = {}
         self._loaded_at: float = 0.0
 
     def _load_catalog(self, max_age_s: float | None = None) -> None:
@@ -39,9 +40,13 @@ class SkuResolver:
             return
         self._by_sku_id = {}
         self._by_product_title = {}
+        self._by_full_title = {}
         for sku in self._uzum.catalog(self._shop_id):
             self._by_sku_id[sku.sku_id] = sku
             self._by_product_title[(sku.product_id, sku.sku_title)] = sku
+            if sku.full_title:
+                self._by_product_title[(sku.product_id, sku.full_title)] = sku
+                self._by_full_title[sku.full_title] = sku
         self._loaded_at = time.monotonic()
         log.info("Каталог Uzum загружен: %d SKU", len(self._by_sku_id))
 
@@ -58,8 +63,10 @@ class SkuResolver:
         if sku_id is not None and sku_id in self._by_sku_id:
             return self._by_sku_id[sku_id]
         if product_id is not None:
-            return self._by_product_title.get((product_id, sku_title))
-        return None
+            found = self._by_product_title.get((product_id, sku_title))
+            if found:
+                return found
+        return self._by_full_title.get(sku_title)
 
     def resolve(
         self,

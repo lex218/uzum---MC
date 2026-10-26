@@ -73,3 +73,23 @@ def test_cache_avoids_repeat_lookup(tmp_path):
     resolver.resolve("PS-1", sku_id=1)
     assert len(ents.calls) == 1  # второй раз — из кэша SQLite
     assert db.get_sku("sku:1")["ms_href"] == "https://ms/p1"
+
+
+def test_full_title_resolves_barcode(tmp_path):
+    """В заказах приходит полный артикул (skuFullTitle), в каталоге skuTitle короткий."""
+    catalog = [
+        CatalogSku(sku_id=7, sku_title="БЕЛЫЙ", product_id=50, product_title="Форма",
+                   barcode="1000131497204", article=None, quantity_active=0,
+                   purchase_price=0, full_title="CFSHOP-FRIKFORMA-БЕЛЫЙ"),
+        CatalogSku(sku_id=8, sku_title="БЕЛЫЙ", product_id=51, product_title="Лампа",
+                   barcode="1000131499999", article=None, quantity_active=0,
+                   purchase_price=0, full_title="CFSHOP-NLAMP12-БЕЛЫЙ"),
+    ]
+    ents = StubEntities(by_barcode={"1000131497204": "https://ms/frik"})
+    resolver = SkuResolver(StubUzum(catalog), ents, Db(str(tmp_path / "f.sqlite3")), 138842)
+    found = resolver.resolve("CFSHOP-FRIKFORMA-БЕЛЫЙ", product_id=50)
+    assert found["matched_by"] == "barcode" and found["href"] == "https://ms/frik"
+    # без productId — по уникальному полному артикулу
+    assert ents.calls[-1] == ("CFSHOP-FRIKFORMA-БЕЛЫЙ", "1000131497204")
+    resolver.resolve("CFSHOP-NLAMP12-БЕЛЫЙ")
+    assert ents.calls[-1] == ("CFSHOP-NLAMP12-БЕЛЫЙ", "1000131499999")
