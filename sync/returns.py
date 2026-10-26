@@ -11,6 +11,7 @@ import logging
 from config import PRICE_MINOR_UNITS
 from moysklad.entities import STATE_RETURNED, meta_ref
 from sync.context import SyncContext
+from sync.naming import Naming
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +76,8 @@ def _return_order_delta(
     # детерминированный ключ идемпотентности: суммарный возврат после этого
     # документа; при падении между POST и записью в БД повтор найдёт документ
     total_after = sum((i["amount_returns"] or 0) for i in items)
-    external_code = f"ret-{order_id}-{total_after}"
+    returned_before = sum((i["returns_synced"] or 0) for i in items)
+    external_code = Naming(ctx.cfg).return_ext(order_id, returned_before, total_after)
     payload = {
         "externalCode": external_code,
         "organization": meta_ref(ctx.entities.organization()),

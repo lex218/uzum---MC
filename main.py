@@ -59,10 +59,16 @@ def cmd_init(ctx: SyncContext) -> None:
     log.info("Склад-источник: «%s»", ctx.entities.store_source().get("name"))
     log.info("Склад Uzum: «%s»", ctx.entities.store_uzum().get("name"))
     log.info("Контрагент: «%s»", ctx.entities.agent().get("name"))
-    ctx.entities.attributes("customerorder")
-    ctx.entities.attributes("demand")
-    ctx.entities.order_states()
-    log.info("Доп. поля и статусы готовы. Инициализация успешна.")
+    if ctx.cfg.compat:
+        # аккаунт с серверной синхронизацией: ничего не создаём, только проверяем
+        ctx.entities.order_states()
+        log.info("Режим uzum-supply: статусы на месте, доп.поля не используются.")
+    else:
+        ctx.entities.attributes("customerorder")
+        ctx.entities.attributes("demand")
+        ctx.entities.order_states()
+        log.info("Доп. поля и статусы готовы.")
+    log.info("Инициализация успешна.")
 
 
 def run_cycle(ctx: SyncContext, dry_run: bool) -> None:

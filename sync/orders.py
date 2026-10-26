@@ -19,6 +19,7 @@ from moysklad.entities import (
     ms_moment,
 )
 from sync.context import SyncContext
+from sync.naming import Naming, put_name
 from uzum.models import OrderItem
 
 log = logging.getLogger(__name__)
@@ -142,9 +143,13 @@ def _create_order(
         }
         for it in active
     ]
+    if dry_run:
+        log.info("[dry-run] Создал бы заказ по заказу Uzum %s: %d позиций", order_id, len(positions))
+        return
+
+    nm = Naming(ctx.cfg)
     payload = {
-        "name": f"UZ-{order_id}",
-        "externalCode": str(order_id),
+        "externalCode": nm.order_ext(order_id),
         "moment": ms_moment(min(i.date_ms for i in items)),
         "organization": meta_ref(ctx.entities.organization()),
         "agent": meta_ref(ctx.entities.agent()),
@@ -160,13 +165,12 @@ def _create_order(
             },
         ),
     }
+    put_name(payload, nm.order_name(order_id))
+    if nm.order_description(order_id):
+        payload["description"] = nm.order_description(order_id)
 
-    if dry_run:
-        log.info("[dry-run] Создал бы заказ UZ-%s: %d позиций", order_id, len(positions))
-        return
-
-    # страховка от дублей, если SQLite потеряна: ищем по externalCode
-    existing = ctx.ms.find_one("/entity/customerorder", f"externalCode={order_id}")
+    # страховка от дублей (потеря SQLite / документ уже создан другой программой)
+    existing = ctx.ms.find_one("/entity/customerorder", f"externalCode={nm.order_ext(order_id)}")
     created = existing or ctx.ms.post("/entity/customerorder", payload)
     ctx.db.upsert_order(
         order_id, "created",

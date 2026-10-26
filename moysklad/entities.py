@@ -24,6 +24,14 @@ STATE_ISSUED = "Uzum: выкуплен"
 STATE_CANCELLED = "Uzum: отменён"
 STATE_RETURNED = "Uzum: возврат"
 
+# Статусы, которыми пользуется серверная синхронизация основного аккаунта
+COMPAT_STATE_NAMES = {
+    STATE_PROCESSING: "Новый",
+    STATE_ISSUED: "Доставлен",
+    STATE_CANCELLED: "Отменен",
+    STATE_RETURNED: "Возврат",
+}
+
 # name, stateType, color (десятичный ARGB)
 ORDER_STATES: list[tuple[str, str, int]] = [
     (STATE_PROCESSING, "Regular", 10774205),
@@ -151,6 +159,8 @@ class Entities:
         self, entity_type: str, values: dict[str, Any]
     ) -> list[dict[str, Any]]:
         """Собрать массив attributes для тела документа (None пропускается)."""
+        if self._cfg.compat:
+            return []  # в аккаунте с серверной синхронизацией доп.поля не заводим
         attrs = self.attributes(entity_type)
         out = []
         for name, value in values.items():
@@ -164,6 +174,12 @@ class Entities:
         if "states" not in self._cache:
             meta = self._ms.get("/entity/customerorder/metadata")
             existing = {s["name"]: s for s in (meta.get("states") or [])}
+            if self._cfg.compat:
+                missing = [n for n in COMPAT_STATE_NAMES.values() if n not in existing]
+                if missing:
+                    raise MoySkladError(f"В МойСклад нет статусов заказа: {', '.join(missing)}")
+                self._cache["states"] = existing
+                return existing
             for name, state_type, color in ORDER_STATES:
                 if name in existing:
                     continue
@@ -188,6 +204,8 @@ class Entities:
         return self._cache["states"]
 
     def order_state_ref(self, name: str) -> dict[str, Any]:
+        if self._cfg.compat:
+            name = COMPAT_STATE_NAMES.get(name, name)
         return meta_ref(self.order_states()[name])
 
     # --- поиск товара ---

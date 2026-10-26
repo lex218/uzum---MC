@@ -13,6 +13,7 @@ from datetime import date, timedelta
 
 from moysklad.entities import meta_ref
 from sync.context import SyncContext
+from sync.naming import Naming, put_name
 from uzum.models import Invoice, InvoiceSku
 
 log = logging.getLogger(__name__)
@@ -107,15 +108,17 @@ def _create_move(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:
         return
 
     payload = {
-        "name": f"UZ-INV-{invoice.number}",
-        "externalCode": str(invoice.id),
+        "externalCode": Naming(ctx.cfg).move_ext(invoice.id),
         "organization": meta_ref(ctx.entities.organization()),
         "sourceStore": meta_ref(ctx.entities.store_source()),
         "targetStore": meta_ref(ctx.entities.store_uzum()),
-        "description": f"Поставка Uzum №{invoice.number} (id {invoice.id})",
+        "description": Naming(ctx.cfg).move_description(invoice.number, invoice.id),
         "positions": positions,
     }
-    existing = ctx.ms.find_one("/entity/move", f"externalCode={invoice.id}")
+    put_name(payload, Naming(ctx.cfg).move_name(invoice.number))
+    existing = ctx.ms.find_one(
+        "/entity/move", f"externalCode={Naming(ctx.cfg).move_ext(invoice.id)}"
+    )
     move = existing or ctx.ms.post("/entity/move", payload)
     sent = {str(s.sku_id): s.to_stock for s in skus}
     ctx.db.add_invoice(invoice.id, invoice.number, move["id"], move["meta"]["href"], sent)
@@ -187,8 +190,7 @@ def _reconcile(ctx: SyncContext, rec: dict, invoice: Invoice, dry_run: bool) -> 
         total_sent = sum(s for _, s, _ in shortages)
         total_acc = sum(a for _, _, a in shortages)
         payload = {
-            "name": f"UZ-LOSS-{invoice.number}",
-            "externalCode": f"loss-{invoice.id}",
+            "externalCode": Naming(ctx.cfg).loss_ext(invoice.id),
             "organization": meta_ref(ctx.entities.organization()),
             "store": meta_ref(ctx.entities.store_uzum()),
             "description": (
@@ -198,7 +200,10 @@ def _reconcile(ctx: SyncContext, rec: dict, invoice: Invoice, dry_run: bool) -> 
             )[:4000],
             "positions": positions,
         }
-        existing = ctx.ms.find_one("/entity/loss", f"externalCode=loss-{invoice.id}")
+        put_name(payload, Naming(ctx.cfg).loss_name(invoice.number))
+        existing = ctx.ms.find_one(
+            "/entity/loss", f"externalCode={Naming(ctx.cfg).loss_ext(invoice.id)}"
+        )
         loss = existing or ctx.ms.post("/entity/loss", payload)
         loss_id = loss["id"]
 

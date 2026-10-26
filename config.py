@@ -42,6 +42,15 @@ class Config:
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     db_path: str = "sync.sqlite3"
+    # "native" — свои коды/статусы/доп.поля; "uzum-supply" — как у серверной
+    # синхронизации основного аккаунта (uzum-o-…, «Новый/Доставлен/Отменен»,
+    # без доп.полей), чтобы документы двух программ распознавали друг друга
+    doc_style: str = "native"
+    shop_label: str = ""
+
+    @property
+    def compat(self) -> bool:
+        return self.doc_style == "uzum-supply"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -73,4 +82,6 @@ class Config:
             telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN") or None,
             telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID") or None,
             db_path=os.getenv("DB_PATH") or "sync.sqlite3",
+            doc_style=os.getenv("DOC_STYLE") or "native",
+            shop_label=os.getenv("SHOP_LABEL") or "",
         )

@@ -11,6 +11,7 @@ import logging
 from config import PRICE_MINOR_UNITS
 from moysklad.entities import STATE_ISSUED, meta_ref, ms_moment
 from sync.context import SyncContext
+from sync.naming import Naming, put_name
 from uzum.models import STATUS_TO_WITHDRAW
 
 log = logging.getLogger(__name__)
@@ -60,8 +61,7 @@ def _ship_order(ctx: SyncContext, rec: dict, dry_run: bool) -> None:
     ]
     issued_ms = max(i["date_issued_ms"] or 0 for i in items)
     payload = {
-        "name": f"UZ-{order_id}",
-        "externalCode": str(order_id),
+        "externalCode": Naming(ctx.cfg).demand_ext(order_id),
         "organization": meta_ref(ctx.entities.organization()),
         "agent": meta_ref(ctx.entities.agent()),
         "store": meta_ref(ctx.entities.store_uzum()),
@@ -84,7 +84,10 @@ def _ship_order(ctx: SyncContext, rec: dict, dry_run: bool) -> None:
     if issued_ms:
         payload["moment"] = ms_moment(issued_ms)
 
-    existing = ctx.ms.find_one("/entity/demand", f"externalCode={order_id}")
+    put_name(payload, Naming(ctx.cfg).demand_name(order_id))
+    existing = ctx.ms.find_one(
+        "/entity/demand", f"externalCode={Naming(ctx.cfg).demand_ext(order_id)}"
+    )
     demand = existing or ctx.ms.post("/entity/demand", payload)
     ctx.db.set_order_demand(order_id, demand["id"], demand["meta"]["href"])
     ctx.ms.put(
@@ -92,11 +95,9 @@ def _ship_order(ctx: SyncContext, rec: dict, dry_run: bool) -> None:
         {"state": ctx.entities.order_state_ref(STATE_ISSUED)},
     )
     # выкупленная дата покупателю — и на заказ
-    if issued_ms:
-        ctx.ms.put(
-            f"/entity/customerorder/{rec['ms_order_id']}",
-            {"attributes": ctx.entities.attr_values(
-                "customerorder", {"Дата доставки": ms_moment(issued_ms)}
-            )},
-        )
-    log.info("Создана отгрузка UZ-%s (заказ выкуплен)", order_id)
+    attrs = ctx.entities.attr_values(
+        "customerorder", {"Дата доставки": ms_moment(issued_ms) if issued_ms else None}
+    )
+    if attrs:
+        ctx.ms.put(f"/entity/customerorder/{rec['ms_order_id']}", {"attributes": attrs})
+    log.info("Создана отгрузка по заказу Uzum %s (заказ выкуплен)", order_id)
