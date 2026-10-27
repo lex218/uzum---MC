@@ -101,10 +101,15 @@ def _create_move(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:
     if positions is None:
         return
     if dry_run:
-        log.info(
-            "[dry-run] Создал бы перемещение по поставке №%s: %d позиций",
-            invoice.number, len(positions),
-        )
+        found = ctx.ms.find_one("/entity/move", f"externalCode={Naming(ctx.cfg).move_ext(invoice.id)}")
+        if found:
+            log.info("[dry-run] Поставка №%s уже есть в МС (перемещение %s) — будет связана, не создана",
+                     invoice.number, found.get("name"))
+        else:
+            log.info(
+                "[dry-run] Создал бы перемещение по поставке №%s: %d позиций",
+                invoice.number, len(positions),
+            )
         return
 
     payload = {

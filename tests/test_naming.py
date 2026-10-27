@@ -67,3 +67,16 @@ def test_dry_run_order_touches_nothing(ctx):
     ctx.entities.agent = lambda: calls.append("agent")
     sync_orders(ctx, dry_run=True)
     assert ctx.ms.posts == [] and calls == []
+
+
+def test_dry_run_reports_existing_docs(ctx, caplog):
+    """На новой базе dry-run не должен обещать создать то, что уже есть в МС."""
+    import logging
+    compat(ctx)
+    ctx.uzum.order_items = [make_item(id=1, orderId=777)]
+    ctx.resolver = FakeResolver({"PS-1": "https://ms/p1"})
+    ctx.ms.find_one_map[("/entity/customerorder", "externalCode=uzum-o-777")] = {"name": "02027"}
+    with caplog.at_level(logging.INFO):
+        sync_orders(ctx, dry_run=True)
+    assert "уже есть в МС (02027)" in caplog.text
+    assert ctx.ms.posts == []

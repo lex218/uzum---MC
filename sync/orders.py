@@ -143,11 +143,16 @@ def _create_order(
         }
         for it in active
     ]
+    nm = Naming(ctx.cfg)
     if dry_run:
-        log.info("[dry-run] Создал бы заказ по заказу Uzum %s: %d позиций", order_id, len(positions))
+        found = ctx.ms.find_one("/entity/customerorder", f"externalCode={nm.order_ext(order_id)}")
+        if found:
+            log.info("[dry-run] Заказ Uzum %s уже есть в МС (%s) — будет связан, не создан",
+                     order_id, found.get("name"))
+        else:
+            log.info("[dry-run] Создал бы заказ по заказу Uzum %s: %d позиций", order_id, len(positions))
         return
 
-    nm = Naming(ctx.cfg)
     payload = {
         "externalCode": nm.order_ext(order_id),
         "moment": ms_moment(min(i.date_ms for i in items)),
