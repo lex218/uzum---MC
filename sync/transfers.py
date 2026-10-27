@@ -122,7 +122,7 @@ def _create_move(ctx: SyncContext, invoice: Invoice, dry_run: bool) -> None:
     move = existing or ctx.ms.post("/entity/move", payload)
     sent = {str(s.sku_id): s.to_stock for s in skus}
     ctx.db.add_invoice(invoice.id, invoice.number, move["id"], move["meta"]["href"], sent)
-    log.info("Создано перемещение UZ-INV-%s (%d позиций)", invoice.number, len(positions))
+    log.info("Создано перемещение %s по поставке №%s (%d позиций)", move.get("name", ""), invoice.number, len(positions))
 
 
 def _reconcile(ctx: SyncContext, rec: dict, invoice: Invoice, dry_run: bool) -> None:

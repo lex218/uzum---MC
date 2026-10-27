@@ -184,7 +184,7 @@ def _create_order(
         for p in ctx.ms.rows(f"/entity/customerorder/{created['id']}/positions"):
             qty_override[p["assortment"]["meta"]["href"]] = int(p.get("quantity") or 0)
     _save_items(ctx, order_id, items, resolved, qty_override)
-    log.info("Создан заказ покупателя UZ-%s (%d позиций)", order_id, len(positions))
+    log.info("Создан заказ покупателя %s по заказу Uzum %s (%d позиций)", created.get("name", ""), order_id, len(positions))
 
 
 def _update_order(ctx: SyncContext, rec: dict, order_id: int, items: list[OrderItem], dry_run: bool) -> None:
